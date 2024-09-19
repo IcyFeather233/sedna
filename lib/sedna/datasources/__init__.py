@@ -21,7 +21,7 @@ import pandas as pd
 from sedna.common.file_ops import FileOps
 from sedna.common.class_factory import ClassFactory, ClassType
 
-__all__ = ('BaseDataSource', 'TxtDataParse', 'CSVDataParse', 'JSONDataParse')
+__all__ = ('BaseDataSource', 'TxtDataParse', 'CSVDataParse', 'JSONDataParse', 'JsonlDataParse', 'JSONMetaDataParse')
 
 
 class BaseDataSource:
@@ -218,3 +218,88 @@ class JSONDataParse(BaseDataSource, ABC):
         del im_ann, annotations
 
         return (res, img_info, file_name)
+
+
+class JsonlDataParse(BaseDataSource, ABC):
+    """
+    jsonl file which contain Structured Data parser
+    """
+    def __init__(self, data_type, func=None):
+        super(JsonlDataParse, self).__init__(data_type=data_type, func=func)
+
+    def parse(self, *args, **kwargs):
+        x_data = []
+        y_data = []
+        for f in args:
+            if not (f and FileOps.exists(f)):
+                continue
+            with open(f, 'r', encoding='utf-8') as file:
+                for line in file:
+                    line = json.loads(line)
+                    x_data.append(line['question'])
+                    y_data.append(line['answer'])
+        self.x = np.array(x_data)
+        self.y = np.array(y_data)
+
+
+class JSONMetaDataParse(BaseDataSource, ABC):
+    """
+    parse data_info.json file
+    """
+    def __init__(self, data_type, func=None):
+        super(JSONMetaDataParse, self).__init__(data_type=data_type, func=func)
+        self.need_other_info = True
+
+    def parse(self, *args, **kwargs):
+        for f in args:
+            if not (f and FileOps.exists(f)):
+                continue
+            with open(f, 'r', encoding='utf-8') as file:
+                json_data = json.load(file)
+                self.dataset_name = json_data['dataset']
+                self.description = json_data['description']
+                self.level_1_dim = json_data['level_1_dim']
+                self.level_2_dim = json_data['level_2_dim']
+                if 'level_3_dim' in json_data:
+                    self.level_3_dim = json_data['level_3_dim']
+                if 'level_4_dim' in json_data:
+                    self.level_4_dim = json_data['level_4_dim']
+            
+
+            data_f = f.replace('metadata.json', 'data.jsonl')
+            x_data = []
+            y_data = []
+            explanation_data = []
+            judge_prompts = []
+            level_3_data = []
+            level_4_data = []
+            with open(data_f, 'r', encoding='utf-8') as file:
+                for line in file:
+                    line = json.loads(line)
+                    cur_x = ""
+                    # "prompt" is optional
+                    if 'prompt' in line:
+                        cur_x += line['prompt']
+                    cur_x += line['question']
+                    x_data.append(cur_x)
+                    y_data.append(line['response'])
+                    # "explanation" is optional
+                    cur_exp = ""
+                    if 'explanation' in line:
+                        cur_exp = line['explanation']
+                    explanation_data.append(cur_exp)
+                    # "judge_prompt" is optional
+                    cur_jp = ""
+                    if "judge_prompt" in line:
+                        cur_jp += line['judge_prompt']
+                    judge_prompts.append(cur_jp)
+                    level_3_data.append(line['level_3_dim'])
+                    level_4_data.append(line['level_4_dim'])
+
+            self.x = np.array(x_data)
+            self.y = np.array(y_data)
+            self.explanation = np.array(explanation_data)
+            self.judge_prompts = np.array(judge_prompts)
+            self.level_3 = np.array(level_3_data)
+            self.level_4 = np.array(level_4_data)
+
